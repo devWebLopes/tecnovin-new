@@ -1,7 +1,61 @@
 # 📊 PROGRESS.md — GestaoNew · Multi-Agent Dashboard
 
 > **Orquestrador:** `orchestrator` (`agents/orchestrator.md`)
-> **Última sincronização:** 2026-08-14 — Reformulação v2 do Painel Compras Frutas no Módulo Agrícola concluída
+> **Última sincronização:** 2026-09-19 — Migração VPN OpenVPN → FortiClient
+
+---
+
+## Sessão 2026-09-19: Migração VPN OpenVPN → FortiClient — CONCLUÍDA ✅
+
+### Escopo e Entrega
+
+- **Pedido do usuário:** trocar a VPN de produção de OpenVPN para **FortiClient** e colocar os dados da conexão no arquivo de configurações.
+- **Decisão aprovada pelo usuário:** usar **openfortivpn em container** (cliente open-source compatível com FortiGate SSL VPN — o FortiClient oficial não roda em Docker), preservando a topologia sidecar existente (`network_mode: service:vpn`).
+- **Dados da conexão informados:** host `vpn1.tecnovin.com.br`, porta `10443`, usuário `tecnovin`. Senha fica como placeholder no `.env.example` (preenchida apenas na VPS — fora do Git).
+
+### Alterações
+
+| Arquivo | Mudança |
+|---------|---------|
+| `deploy/vpn/Dockerfile` *(novo)* | Alpine 3.20 + `openfortivpn` + `ppp` — imagem do sidecar VPN (build local na VPS) |
+| `deploy/vpn/entrypoint.sh` *(novo)* | Gera `/etc/openfortivpn/config` a partir das envs (`chmod 600`) e executa `openfortivpn -c`; suporta `VPN_REALM`, `VPN_TRUSTED_CERT`, `VPN_INSECURE_SSL` opcionais |
+| `deploy/.env.example` | Novo bloco **VPN FortiClient**: `VPN_HOST=vpn1.tecnovin.com.br`, `VPN_PORT=10443`, `VPN_USERNAME=tecnovin`, `VPN_PASSWORD=SUA_SENHA_VPN_AQUI` + opcionais documentadas |
+| `docker-compose.prod.yml` | Serviço `vpn`: `build: ./deploy/vpn` + `image: gestaonew-vpn-forticlient:latest`, `devices: /dev/ppp` (era `/dev/net/tun`), envs `VPN_*`, removidos volume `./vpn` e `command -f client.ovpn -a auth.txt` |
+| `deploy/setup-vps.sh` | Módulo `ppp_generic` (era `tun`); cria `/opt/gestaonew/deploy/vpn`; instruções finais sem `.ovpn`/`auth.txt` |
+| `docs/deploy-producao.md` | Topologia e diagrama (túnel FortiClient/`ppp0`); Passo 2 reescrito (credenciais no `.env`, fingerprint SHA-256 via `openssl s_client`, validação `Tunnel is up and running` + `ppp0`); troubleshooting FortiClient (cert autoassinado, `/dev/ppp`, política SSL VPN na FortiGate); Passo 6 com `--build`; checklist atualizado |
+| `docs/README.md` | Índice: OpenVPN → FortiClient VPN |
+| `.gitattributes` *(novo)* | `*.sh text eol=lf` — impede CRLF no checkout Windows quebrando scripts no container |
+
+### Validação
+
+- `docker compose -f docker-compose.prod.yml config` ✅ — serviço `vpn` parseado corretamente (build context, envs, `/dev/ppp`); warnings de `VPN_*` ausentes são esperados (`.env` real só existe na VPS).
+- `entrypoint.sh` verificado: **0 CRLF**, shebang `#!/bin/sh` correto.
+- **Pendente (VPS):** build da imagem e os 4 testes do túnel (`ppp0`, rota `192.168.1.0/24`, ping `192.168.1.4`, porta `1526`) — daemon Docker local estava parado na sessão. Task **VPN-10** no `TASKS.md`.
+
+### Observações
+
+- Nginx inalterado: o proxy continua resolvendo a API pelo nome do serviço `vpn` (`proxy_pass http://vpn:8080/api/`).
+- Se o gateway FortiGate usar certificado autoassinado, o 1º log de erro do container mostrará o fingerprint a ser copiado para `VPN_TRUSTED_CERT`.
+- CI/CD (`.github/workflows/deploy.yml`) não referencia a VPN — sem impacto; a imagem da VPN é buildada na VPS (contexto `deploy/vpn`), não no GHCR.
+
+---
+
+## Sessão 2026-09-19: Manual de Deploy em Produção — CONCLUÍDA ✅
+
+### Escopo e Entrega
+
+- **Pedido do usuário:** manual passo a passo para subir a aplicação em produção, com uso obrigatório de VPN OpenVPN para acessar o banco Oracle.
+- **`docs/deploy-producao.md` criado** — manual completo baseado na infraestrutura já existente no repositório (`docker-compose.prod.yml`, `deploy/setup-vps.sh`, `deploy/.env.example`, `deploy/nginx/conf.d/app.conf`, `.github/workflows/deploy.yml`):
+  - Arquitetura de produção (diagrama): gateway Nginx → web (React) + api (.NET 9) compartilhando o namespace de rede do container VPN (`network_mode: service:vpn`) → Oracle `192.168.1.4:1526/TECNOVIN`.
+  - 8 passos: preparar VPS (`setup-vps.sh`) → **configurar e validar a VPN isoladamente** (client.ovpn, auth.txt, ping/rota/porta 1526) → `.env` → compose + nginx → publicar imagens (CI/CD GHCR, push manual ou build na VPS) → bootstrap SSL temporário + subida da stack → certbot real + renovação via cron → validação pós-deploy (`/api/health`, `/api/health/database`, teste funcional).
+  - Redeploy, rollback (tags por SHA), troubleshooting (VPN/Oracle/SSL/gateway) e checklist de go-live.
+- **Índices atualizados:** `docs/README.md` (referência ao novo doc) e `AGENTS.md` (13 → 14 documentos).
+
+### Observações registradas no manual
+
+- O frontend chama a API por caminho relativo (`/api/v1` em `Empresa.Web/src/lib/api.ts`) — um único domínio resolve; `VITE_API_BASE_URL` em `.env.production` não é consumido pelo código.
+- `Empresa.Worker` não faz parte da topologia de produção atual (nota §14 do manual).
+- Bloqueio conhecido mantido: Oracle só acessível via VPN — o manual exige validação do túnel **antes** de subir a API.
 
 ---
 

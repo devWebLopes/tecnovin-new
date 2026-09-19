@@ -31,10 +31,10 @@ if [ ! -f /swapfile ]; then
     fi
 fi
 
-echo "=== [4/7] Habilitando módulo TUN para OpenVPN ==="
-sudo modprobe tun
-if ! grep -q "^tun$" /etc/modules; then
-    echo "tun" | sudo tee -a /etc/modules
+echo "=== [4/7] Habilitando módulo PPP para FortiClient SSL VPN (openfortivpn) ==="
+sudo modprobe ppp_generic
+if ! grep -q "^ppp_generic$" /etc/modules; then
+    echo "ppp_generic" | sudo tee -a /etc/modules
 fi
 
 echo "=== [5/7] Instalando Docker & Docker Compose ==="
@@ -44,7 +44,7 @@ if ! command -v docker &> /dev/null; then
 fi
 
 echo "=== [6/7] Criando estrutura de pastas em /opt/gestaonew ==="
-sudo mkdir -p /opt/gestaonew/vpn
+sudo mkdir -p /opt/gestaonew/deploy/vpn
 sudo mkdir -p /opt/gestaonew/nginx/conf.d
 sudo mkdir -p /opt/gestaonew/nginx/ssl
 sudo mkdir -p /opt/gestaonew/nginx/certbot-www
@@ -55,7 +55,8 @@ sudo chown -R "$USER":"$USER" /opt/gestaonew
 echo "=== [7/7] Configuração concluída! ==="
 echo ""
 echo "Próximos passos manuais:"
-echo "1. Copie seu arquivo .ovpn para: /opt/gestaonew/vpn/client.ovpn"
-echo "2. Crie /opt/gestaonew/vpn/auth.txt (se sua VPN usar usuário/senha)"
-echo "3. Copie o docker-compose.prod.yml e .env para /opt/gestaonew/"
-echo "4. Inicie os serviços com: docker compose -f docker-compose.prod.yml up -d"
+echo "1. Copie a pasta deploy/vpn (Dockerfile do openfortivpn) para: /opt/gestaonew/deploy/vpn"
+echo "2. Copie o docker-compose.prod.yml para /opt/gestaonew/"
+echo "3. Crie /opt/gestaonew/.env a partir do deploy/.env.example e preencha"
+echo "   as variáveis da VPN FortiClient (VPN_HOST, VPN_PORT, VPN_USERNAME, VPN_PASSWORD)"
+echo "4. Inicie os serviços com: docker compose -f docker-compose.prod.yml up -d --build"

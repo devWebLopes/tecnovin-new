@@ -225,6 +225,7 @@ Consulte os documentos em `docs/`:
 - `api-patterns.md` — Minimal APIs
 - `data-layer.md` — Dapper + Oracle
 - `oracle-connection.md` — Parâmetros de conexão Oracle (ODP.NET)
+- `deploy-producao.md` — Manual passo a passo de deploy em produção (VPS + FortiClient VPN + Docker + SSL)
 - `padroes-paineis.md` — Checklist obrigatório de acesso, conexão e carregamento para novos painéis
 - `auditoria-aprendizado-paineis.md` — Auditoria dos incidentes recorrentes e incorporação das correções
 - `error-handling.md` — Exception middleware

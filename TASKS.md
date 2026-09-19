@@ -1,12 +1,31 @@
 # 📋 TASKS.md — Backlog Operacional (Roadmap PRD) · Multi-Agent
 
 > **Orquestrador:** `orchestrator` (`agents/orchestrator.md`)
-> **Última sincronização:** 2026-08-14 — Auditoria de aprendizado dos painéis concluída; padrão de novas features reforçado
+> **Última sincronização:** 2026-09-19 — Migração VPN OpenVPN → FortiClient (openfortivpn)
 
 ## Legenda
 - `[ ]` = Pendente
 - `[x]` = Concluído
 - `[~]` = Em andamento
+
+---
+
+## 🔐 Migração VPN: OpenVPN → FortiClient (2026-09-19) — CONCLUÍDA ✅
+
+> **Pedido do usuário:** substituir OpenVPN por FortiClient e colocar os dados da conexão no arquivo de configurações.
+> **Abordagem aprovada:** `openfortivpn` em container (cliente FOSS compatível com FortiGate SSL VPN), mantendo a topologia sidecar.
+> **Conexão:** `vpn1.tecnovin.com.br:10443` · usuário `tecnovin` · senha via `.env` (não versionada).
+
+- [x] VPN-01 — Criar `deploy/vpn/Dockerfile` (Alpine 3.20 + `openfortivpn` + `ppp`)
+- [x] VPN-02 — Criar `deploy/vpn/entrypoint.sh` — gera config a partir das envs `VPN_HOST`/`VPN_PORT`/`VPN_USERNAME`/`VPN_PASSWORD` (+ opcionais `VPN_REALM`, `VPN_TRUSTED_CERT`, `VPN_INSECURE_SSL`), `chmod 600`, inicia `openfortivpn -c`
+- [x] VPN-03 — Atualizar `deploy/.env.example` com o bloco FortiClient (host/porta/usuário reais, senha placeholder)
+- [x] VPN-04 — Atualizar `docker-compose.prod.yml`: serviço `vpn` com `build: ./deploy/vpn`, `devices: /dev/ppp` (substitui `/dev/net/tun`), envs `VPN_*`, removido volume `./vpn` e `command` do `.ovpn`
+- [x] VPN-05 — Atualizar `deploy/setup-vps.sh`: módulo `ppp_generic` (substitui `tun`), pasta `deploy/vpn`, instruções sem `.ovpn`/`auth.txt`
+- [x] VPN-06 — Atualizar `docs/deploy-producao.md`: topologia, Passo 2 (credenciais no `.env` + fingerprint SHA-256), validação com `ppp0` + `Tunnel is up and running`, troubleshooting FortiClient, checklist
+- [x] VPN-07 — Atualizar `docs/README.md` (índice: OpenVPN → FortiClient)
+- [x] VPN-08 — Criar `.gitattributes` (`*.sh text eol=lf`) — evita CRLF quebrando scripts no container Linux
+- [x] VPN-09 — Validar `docker compose config` (serviço `vpn` parseado corretamente) ✅
+- [ ] VPN-10 — **Pendente (VPS):** validar build da imagem (`docker compose -f docker-compose.prod.yml up -d --build vpn`) e os 4 testes do túnel (ppp0/rota/ping/porta 1526) — Docker daemon local indisponível na sessão
 
 ---
 

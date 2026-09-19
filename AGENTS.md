@@ -22,7 +22,7 @@ Este arquivo (`AGENTS.md`) é um atalho/ponteiro. O `CLAUDE.md` tem precedência
 | `agents/` | 7 personas especializadas | Quando a tarefa envolver a especialidade |
 | `skills/` | 12 guias técnicos (Dapper, Oracle, JWT, React...) | Quando a tarefa usar a tecnologia |
 | `commands/` | Prompts reutilizáveis (feature, bug, review, commit) | Quando executar o tipo de tarefa |
-| `docs/` | 13 documentos por área (architecture, security, testing...) | Aprofundamento sob demanda |
+| `docs/` | 14 documentos por área (architecture, security, testing, deploy...) | Aprofundamento sob demanda |
 
 ## Stack Real (IMPORTANTE)
 
