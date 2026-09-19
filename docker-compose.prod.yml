@@ -1,0 +1,81 @@
+# ─────────────────────────────────────────────
+# docker-compose.prod.yml — GestãoNew Produção (Hostinger VPS)
+# Topologia: VPN Sidecar + API (.NET 9) + Web (React) + Nginx Gateway
+# ─────────────────────────────────────────────
+
+services:
+  # ── 1. VPN Sidecar (Túnel para o Oracle Database) ──
+  vpn:
+    image: dperson/openvpn-client:latest
+    container_name: gestaonew-vpn
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun
+    volumes:
+      - ./vpn:/vpn:ro
+    environment:
+      - TZ=America/Sao_Paulo
+    restart: always
+    command: -f /vpn/client.ovpn -a /vpn/auth.txt
+    healthcheck:
+      test: ["CMD-SHELL", "ping -c 2 192.168.1.4 || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - gestaonew-network
+
+  # ── 2. Backend API (.NET 9 Minimal API) ──
+  api:
+    image: ${API_IMAGE:-ghcr.io/gestaonew/api:latest}
+    container_name: gestaonew-api
+    network_mode: "service:vpn"  # Compartilha network namespace com a VPN
+    depends_on:
+      vpn:
+        condition: service_healthy
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://0.0.0.0:8080
+      - ConnectionStrings__Oracle=${ORACLE_CONNECTION_STRING}
+      - Jwt__Secret=${JWT_SECRET}
+      - Jwt__Issuer=Empresa.Api
+      - Jwt__Audience=Empresa.App
+      - Jwt__ExpiryMinutes=${JWT_EXPIRY_MINUTES:-60}
+      - Jwt__RefreshTokenExpiryDays=${JWT_REFRESH_DAYS:-7}
+      - TZ=America/Sao_Paulo
+    volumes:
+      - ./logs/api:/app/logs
+    restart: always
+
+  # ── 3. Frontend Web (React SPA) ──
+  web:
+    image: ${WEB_IMAGE:-ghcr.io/gestaonew/web:latest}
+    container_name: gestaonew-web
+    restart: always
+    networks:
+      - gestaonew-network
+
+  # ── 4. Nginx Gateway Reverso & SSL ──
+  gateway:
+    image: nginx:1.27-alpine
+    container_name: gestaonew-gateway
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - web
+      - vpn
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/ssl:/etc/letsencrypt:ro
+      - ./nginx/certbot-www:/var/www/certbot:ro
+      - ./logs/nginx:/var/log/nginx
+    restart: always
+    networks:
+      - gestaonew-network
+
+networks:
+  gestaonew-network:
+    driver: bridge

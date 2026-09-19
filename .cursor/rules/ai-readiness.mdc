@@ -1,0 +1,48 @@
+---
+description: Governança central, contratos arquiteturais e protocolo de execução para agentes Cursor
+globs: 
+alwaysApply: true
+---
+
+# GestãoNew — Regras para Agentes Cursor
+
+## Fonte de Verdade
+- **LEIA `CLAUDE.md` na raiz** — é a constituição do projeto e contém os 8 contratos arquiteturais, o protocolo de execução e as restrições globais. Este arquivo apenas resume; o `CLAUDE.md` tem precedência.
+
+## Protocolo Obrigatório (antes de codificar)
+1. **LEIA `PROGRESS.md`** → saber onde parou e o que já falhou
+2. **LEIA `TASKS.md`** → identificar a próxima tarefa
+3. **CONSULTE `agents/`** → escopo e responsabilidades por persona
+4. **CONSULTE `skills/`** → guias técnicos (Dapper, Oracle, JWT, React, etc.)
+5. **EXECUTE** a tarefa seguindo os contratos abaixo
+6. **VALIDE** → `dotnet build` + `dotnet test`
+7. **ATUALIZE** `TASKS.md` e `PROGRESS.md`
+
+## Contratos Arquiteturais (resumo — ver CLAUDE.md completo)
+- **Clean Architecture**: Api → Data → Util. Nenhuma camada referencia outra que não seja a imediatamente abaixo.
+- **Dapper + Oracle**: Nunca usar Entity Framework nem ADO.NET puro fora do Dapper.
+- **DI nativa**: Apenas `Microsoft.Extensions.DependencyInjection`.
+- **Async/Await**: Toda operação de I/O deve ser `async Task`. Proibido `.Result`/`.Wait()`.
+- **Models vs DTOs**: `Empresa.Data.Models` são entidades de banco; endpoints recebem DTOs.
+- **Tratamento de Erros**: `IResult` padronizado (`Ok`, `NotFound`, `BadRequest`) + middleware global.
+- **Senhas**: Hash (BCrypt ou PBKDF2). Jamais texto plano.
+
+## Frontend (Empresa.Web)
+- Stack real: **React 18 + TypeScript + Vite + Ant Design 5 + Zustand + React Router DOM 6 + Axios + dayjs**
+- Comandos: `npm run dev` (dev), `npm run build` (build), `npm run lint` (lint), `npm run test` (vitest)
+- Estrutura: `src/modules/<modulo>/{components,services,hooks,types.ts,<Modulo>Page.tsx}`
+
+## Guardrails (NUNCA)
+- **Nunca** use `Sync` para operações de I/O.
+- **Nunca** crie arquivos soltos na raiz — tudo dentro de um projeto da solution.
+- **Nunca** commite `.env`, `appsettings.*.local`, `secrets.json`, chaves ou binários (`bin/`, `obj/`).
+- **Nunca** altere migrations/procedures Oracle destrutivas sem aprovação do `database-engineer`.
+- **Nunca** use a stack frontend desatualizada (Vue/PrimeVue/Pinia) — o projeto é React.
+
+## Comandos de Validação
+```bash
+# Backend
+dotnet build && dotnet test
+
+# Frontend
+cd Empresa.Web && npm run lint && npm run build

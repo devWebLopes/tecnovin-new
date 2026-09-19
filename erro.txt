@@ -1,0 +1,59 @@
+Usando as configurações de inicialização de D:\clientes\go19\tecnovin\teste\GestaoNew\Empresa.Api\Properties\launchSettings.json...
+Compilando...
+[21:20:52 INF] === GestaoNew API iniciando ===
+[21:20:52 INF] Now listening on: http://localhost:5139
+[21:20:52 INF] Application started. Press Ctrl+C to shut down.
+[21:20:52 INF] Hosting environment: Development
+[21:20:52 INF] Content root path: D:\clientes\go19\tecnovin\teste\GestaoNew\Empresa.Api
+[21:21:39 INF] Failed to validate the token.
+Microsoft.IdentityModel.Tokens.SecurityTokenExpiredException: IDX10223: Lifetime validation failed. The token is expired. ValidTo (UTC): '02/08/2026 03:38:16', Current time (UTC): '03/08/2026 00:21:39'.
+   at Microsoft.IdentityModel.Tokens.ValidatorUtilities.ValidateLifetime(Nullable`1 notBefore, Nullable`1 expires, SecurityToken securityToken, TokenValidationParameters validationParameters)
+   at Microsoft.IdentityModel.Tokens.Validators.ValidateLifetime(Nullable`1 notBefore, Nullable`1 expires, SecurityToken securityToken, TokenValidationParameters validationParameters)
+   at Microsoft.IdentityModel.JsonWebTokens.JsonWebTokenHandler.ValidateTokenPayloadAsync(JsonWebToken jsonWebToken, TokenValidationParameters validationParameters, BaseConfiguration configuration)
+   at Microsoft.IdentityModel.JsonWebTokens.JsonWebTokenHandler.ValidateJWSAsync(JsonWebToken jsonWebToken, TokenValidationParameters validationParameters, BaseConfiguration configuration)
+[21:21:39 INF] Bearer was not authenticated. Failure message: IDX10223: Lifetime validation failed. The token is expired. ValidTo (UTC): '02/08/2026 03:38:16', Current time (UTC): '03/08/2026 00:21:39'.
+[21:21:40 INF] Login bem-sucedido: treis (ID: 2)
+[21:21:45 WRN] Falha ao registrar telemetria — usuário 2, chave 'cadastroPerfil'
+Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-00904: "DATA_ULTIMO_ACESSO": identificador inválido
+https://docs.oracle.com/error-help/db/ora-00904/
+   at OracleInternal.ServiceObjects.OracleConnectionImpl.VerifyExecution(Int32& cursorId, Boolean bThrowArrayBindRelatedErrors, SqlStatementType sqlStatementType, Int32 arrayBindCount, OracleException& exceptionForArrayBindDML, Boolean& hasMoreRowsInDB, Boolean bFirstIterationDone)
+   at OracleInternal.ServiceObjects.OracleCommandImpl.VerifyExecution(OracleConnectionImpl connectionImpl, Int32& cursorId, Boolean bThrowArrayBindRelatedErrors, OracleException& exceptionForArrayBindDML, Boolean& hasMoreRowsInDB, Boolean bFirstIterationDone)
+   at OracleInternal.ServiceObjects.OracleCommandImpl.ExecuteNonQueryAsync(String commandText, OracleParameterCollection paramColl, CommandType commandType, OracleConnectionImpl connectionImpl, Int32 longFetchSize, Int64 clientInitialLOBFS, OracleDependencyImpl orclDependencyImpl, OracleConnection connection, ENQ_RefAndOutParamArgCtx enq_refOutArgCtx, Boolean isFromEF, Boolean bAsync)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteNonQueryInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteNonQueryAsyncHelper(CancellationToken cancellationToken)
+   at Dapper.SqlMapper.ExecuteImplAsync(IDbConnection cnn, CommandDefinition command, Object param) in /_/Dapper/SqlMapper.Async.cs:line 663
+   at Empresa.Data.Repositories.AcessoRepository.RegistraAcessoPaginaAsync(Int32 idUsuario, Int32 idPagina) in D:\clientes\go19\tecnovin\teste\GestaoNew\Empresa.Data\Repositories\AcessoRepository.cs:line 144
+   at Empresa.Api.Services.MenuService.RegistrarAcessoAsync(String chaveControle, Int32 idUsuario, Int32 idPerfil) in D:\clientes\go19\tecnovin\teste\GestaoNew\Empresa.Api\Services\MenuService.cs:line 74
+[21:21:48 WRN] Falha ao registrar telemetria — usuário 2, chave 'cadastroUsuario'
+Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-00904: "DATA_ULTIMO_ACESSO": identificador inválido
+https://docs.oracle.com/error-help/db/ora-00904/
+   at OracleInternal.ServiceObjects.OracleConnectionImpl.VerifyExecution(Int32& cursorId, Boolean bThrowArrayBindRelatedErrors, SqlStatementType sqlStatementType, Int32 arrayBindCount, OracleException& exceptionForArrayBindDML, Boolean& hasMoreRowsInDB, Boolean bFirstIterationDone)
+   at OracleInternal.ServiceObjects.OracleCommandImpl.VerifyExecution(OracleConnectionImpl connectionImpl, Int32& cursorId, Boolean bThrowArrayBindRelatedErrors, OracleException& exceptionForArrayBindDML, Boolean& hasMoreRowsInDB, Boolean bFirstIterationDone)
+   at OracleInternal.ServiceObjects.OracleCommandImpl.ExecuteNonQueryAsync(String commandText, OracleParameterCollection paramColl, CommandType commandType, OracleConnectionImpl connectionImpl, Int32 longFetchSize, Int64 clientInitialLOBFS, OracleDependencyImpl orclDependencyImpl, OracleConnection connection, ENQ_RefAndOutParamArgCtx enq_refOutArgCtx, Boolean isFromEF, Boolean bAsync)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteNonQueryInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteNonQueryAsyncHelper(CancellationToken cancellationToken)
+   at Dapper.SqlMapper.ExecuteImplAsync(IDbConnection cnn, CommandDefinition command, Object param) in /_/Dapper/SqlMapper.Async.cs:line 663
+   at Empresa.Data.Repositories.AcessoRepository.RegistraAcessoPaginaAsync(Int32 idUsuario, Int32 idPagina) in D:\clientes\go19\tecnovin\teste\GestaoNew\Empresa.Data\Repositories\AcessoRepository.cs:line 144
+   at Empresa.Api.Services.MenuService.RegistrarAcessoAsync(String chaveControle, Int32 idUsuario, Int32 idPerfil) in D:\clientes\go19\tecnovin\teste\GestaoNew\Empresa.Api\Services\MenuService.cs:line 74
+[21:21:48 WRN] Falha ao registrar telemetria — usuário 2, chave 'cadastroUsuarioBi'
+Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-00904: "DATA_ULTIMO_ACESSO": identificador inválido
+https://docs.oracle.com/error-help/db/ora-00904/
+   at OracleInternal.ServiceObjects.OracleConnectionImpl.VerifyExecution(Int32& cursorId, Boolean bThrowArrayBindRelatedErrors, SqlStatementType sqlStatementType, Int32 arrayBindCount, OracleException& exceptionForArrayBindDML, Boolean& hasMoreRowsInDB, Boolean bFirstIterationDone)
+   at OracleInternal.ServiceObjects.OracleCommandImpl.VerifyExecution(OracleConnectionImpl connectionImpl, Int32& cursorId, Boolean bThrowArrayBindRelatedErrors, OracleException& exceptionForArrayBindDML, Boolean& hasMoreRowsInDB, Boolean bFirstIterationDone)
+   at OracleInternal.ServiceObjects.OracleCommandImpl.ExecuteNonQueryAsync(String commandText, OracleParameterCollection paramColl, CommandType commandType, OracleConnectionImpl connectionImpl, Int32 longFetchSize, Int64 clientInitialLOBFS, OracleDependencyImpl orclDependencyImpl, OracleConnection connection, ENQ_RefAndOutParamArgCtx enq_refOutArgCtx, Boolean isFromEF, Boolean bAsync)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteNonQueryInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteNonQueryAsyncHelper(CancellationToken cancellationToken)
+   at Dapper.SqlMapper.ExecuteImplAsync(IDbConnection cnn, CommandDefinition command, Object param) in /_/Dapper/SqlMapper.Async.cs:line 663
+   at Empresa.Data.Repositories.AcessoRepository.RegistraAcessoPaginaAsync(Int32 idUsuario, Int32 idPagina) in D:\clientes\go19\tecnovin\teste\GestaoNew\Empresa.Data\Repositories\AcessoRepository.cs:line 144
+   at Empresa.Api.Services.MenuService.RegistrarAcessoAsync(String chaveControle, Int32 idUsuario, Int32 idPerfil) in D:\clientes\go19\tecnovin\teste\GestaoNew\Empresa.Api\Services\MenuService.cs:line 74
+[21:21:55 WRN] Falha ao registrar telemetria — usuário 2, chave 'verificaRelatorio'
+Oracle.ManagedDataAccess.Client.OracleException (0x80004005): ORA-00904: "DATA_ULTIMO_ACESSO": identificador inválido
+https://docs.oracle.com/error-help/db/ora-00904/
+   at OracleInternal.ServiceObjects.OracleConnectionImpl.VerifyExecution(Int32& cursorId, Boolean bThrowArrayBindRelatedErrors, SqlStatementType sqlStatementType, Int32 arrayBindCount, OracleException& exceptionForArrayBindDML, Boolean& hasMoreRowsInDB, Boolean bFirstIterationDone)
+   at OracleInternal.ServiceObjects.OracleCommandImpl.VerifyExecution(OracleConnectionImpl connectionImpl, Int32& cursorId, Boolean bThrowArrayBindRelatedErrors, OracleException& exceptionForArrayBindDML, Boolean& hasMoreRowsInDB, Boolean bFirstIterationDone)
+   at OracleInternal.ServiceObjects.OracleCommandImpl.ExecuteNonQueryAsync(String commandText, OracleParameterCollection paramColl, CommandType commandType, OracleConnectionImpl connectionImpl, Int32 longFetchSize, Int64 clientInitialLOBFS, OracleDependencyImpl orclDependencyImpl, OracleConnection connection, ENQ_RefAndOutParamArgCtx enq_refOutArgCtx, Boolean isFromEF, Boolean bAsync)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteNonQueryInternalAsync(Boolean bAsync, CancellationToken cancellationToken)
+   at Oracle.ManagedDataAccess.Client.OracleCommand.ExecuteNonQueryAsyncHelper(CancellationToken cancellationToken)
+   at Dapper.SqlMapper.ExecuteImplAsync(IDbConnection cnn, CommandDefinition command, Object param) in /_/Dapper/SqlMapper.Async.cs:line 663
+   at Empresa.Data.Repositories.AcessoRepository.RegistraAcessoPaginaAsync(Int32 idUsuario, Int32 idPagina) in D:\clientes\go19\tecnovin\teste\GestaoNew\Empresa.Data\Repositories\AcessoRepository.cs:line 144
+   at Empresa.Api.Services.MenuService.RegistrarAcessoAsync(String chaveControle, Int32 idUsuario, Int32 idPerfil) in D:\clientes\go19\tecnovin\teste\GestaoNew\Empresa.Api\Services\MenuService.cs:line 74

@@ -1,0 +1,59 @@
+# ─────────────────────────────────────────────
+# GestãoNew — .gitignore (raiz da solution)
+# ─────────────────────────────────────────────
+
+## .NET / Visual Studio
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+.vscode/
+App_Data/
+packages/
+TestResults/
+artifacts/
+
+## Build outputs
+*.dll
+*.exe
+*.pdb
+*.cache
+*.tmp
+*.log
+logs/
+
+## Environment / Secrets (NUNCA commitar)
+.env
+.env.*
+!.env.example
+appsettings.*.local
+appsettings.*.local.json
+*.local.json
+appsettings.Development.json
+secrets.json
+*.pfx
+*.key
+
+## Frontend (Empresa.Web)
+node_modules/
+dist/
+.vite/
+
+## IDE
+.idea/
+*.swp
+*.swo
+*~
+
+## OS
+Thumbs.db
+.DS_Store
+Desktop.ini
+
+## NuGet
+*.nupkg
+*.snupkg
+nuget.config.bak

@@ -1,0 +1,613 @@
+CREATE OR REPLACE PACKAGE BODY PKG_BI_COMPRAS is
+  -- Initialization
+ FUNCTION FN_BUSCA_SAFRA (P_CD_LINHA NUMBER,
+                          P_CD_EMPRESA IN NUMBER,
+                          P_DT_MOVIMENTO DATE) RETURN  VARCHAR2
+ IS 
+   V_SAFRA VARCHAR2(30);
+ BEGIN 
+   BEGIN 
+     SELECT A.SAFRA INTO V_SAFRA 
+      FROM ( SELECT T.SAFRA FROM META_COMPRAS T
+              WHERE T.CD_EMPRESA = P_CD_EMPRESA
+                AND T.CD_LINHA = P_CD_LINHA 
+                AND P_DT_MOVIMENTO BETWEEN T.DT_INICIAL AND T.DT_FINAL
+              ORDER BY  T.DT_FINAL
+            ) A
+        WHERE ROWNUM = 1;
+   EXCEPTION
+     WHEN NO_DATA_FOUND THEN 
+       BEGIN 
+         SELECT A.SAFRA INTO V_SAFRA 
+           FROM ( SELECT T.SAFRA FROM META_COMPRAS T
+                  WHERE T.CD_EMPRESA = P_CD_EMPRESA
+                    AND T.CD_LINHA = P_CD_LINHA 
+                    AND T.DT_FINAL < P_DT_MOVIMENTO
+                  ORDER BY T.DT_FINAL DESC 
+                ) A
+            WHERE ROWNUM = 1;
+       EXCEPTION 
+         WHEN NO_DATA_FOUND THEN 
+         V_SAFRA :=NULL;         
+       END;
+   END;
+ RETURN (V_SAFRA);
+ 
+ END FN_BUSCA_SAFRA;
+ 
+ FUNCTION FN_BUSCA_META (P_CD_LINHA IN NUMBER,
+                         P_CD_EMPRESA IN NUMBER,
+                         P_UF IN VARCHAR2
+                         ) RETURN NUMBER
+ IS
+  V_META NUMBER;
+ BEGIN 
+  IF P_UF IS NULL THEN 
+   SELECT SUM(A.META) 
+     INTO V_META
+   FROM (SELECT T.CD_LINHA,
+                T.CD_EMPRESA,
+                MAX(T.QTDE_META) META
+         FROM GTT_ANALISE_REC_FRUTAS2 T
+         WHERE (T.CD_LINHA = P_CD_LINHA OR P_CD_LINHA IS NULL)
+          AND  (T.CD_EMPRESA = P_CD_EMPRESA OR P_CD_EMPRESA IS NULL)
+         GROUP BY T.CD_LINHA,T.CD_EMPRESA) A ;
+  ELSE 
+    V_META:=0;
+  END IF;
+  RETURN (NVL(V_META,0));
+ END FN_BUSCA_META;                                                       
+ 
+ 
+ PROCEDURE SP_RECEBIMENTO_FRUTAS (P_DATA IN DATE,
+                                  R_RESULTADO OUT SYS_REFCURSOR
+                                  )
+ IS  
+  V_DATA_EMISSAO DATE;
+   
+ BEGIN 
+   IF P_DATA IS NULL THEN 
+     V_DATA_EMISSAO:=TRUNC(SYSDATE);
+   ELSE
+     V_DATA_EMISSAO:=P_DATA;
+   END IF;
+   EXECUTE IMMEDIATE 'TRUNCATE TABLE GTT_ANALISE_REC_FRUTAS2';
+   EXECUTE IMMEDIATE 'TRUNCATE TABLE GTT_SAFRA_VIGENTE';
+   EXECUTE IMMEDIATE 'ALTER SESSION SET NLS_LANGUAGE ="AMERICAN"';
+   EXECUTE IMMEDIATE 'ALTER SESSION SET NLS_DATE_FORMAT ="DD/MM/YYYY"';
+   
+   -- MONTA SAFRA VIGENTE
+   FOR MT IN (SELECT M.CD_LINHA,M.CD_EMPRESA FROM META_COMPRAS M 
+                group by m.cd_linha,m.cd_empresa 
+                 )   
+   LOOP
+       INSERT INTO GTT_SAFRA_VIGENTE (CD_LINHA, CD_EMPRESA, SAFRA, DT_INICIAL, DT_FINAL, META_QTDE)
+          SELECT CD_LINHA, CD_EMPRESA, SAFRA, DT_INICIAL, DT_FINAL, META_QTDE 
+          FROM META_COMPRAS M 
+          WHERE M.CD_LINHA = MT.CD_LINHA
+            AND M.CD_EMPRESA = MT.CD_EMPRESA
+            AND TRUNC(V_DATA_EMISSAO) BETWEEN M.DT_INICIAL AND M.DT_FINAL;
+       IF SQL%ROWCOUNT = 0 THEN 
+         -- SE NÃO ACHOU ENTÃO ABRE O CURSOR PARA PUXAR SOMENTE 1 REGISTRO DO PERIODO ANTERIOR, SEJA ELE QUAL FOR
+         FOR PA IN (SELECT * FROM META_COMPRAS MA WHERE 
+                          MA.CD_LINHA = MT.CD_LINHA 
+                      AND MA.CD_EMPRESA = MT.CD_EMPRESA
+                     AND MA.DT_FINAL<=TRUNC(V_DATA_EMISSAO)
+                    ORDER BY MA.DT_FINAL DESC)
+         LOOP
+            INSERT INTO GTT_SAFRA_VIGENTE (CD_LINHA, CD_EMPRESA, SAFRA, DT_INICIAL, DT_FINAL, META_QTDE)
+              VALUES (PA.CD_LINHA,PA.CD_EMPRESA,PA.SAFRA,PA.DT_INICIAL,PA.DT_FINAL,PA.META_QTDE);
+            EXIT;
+         END LOOP;
+       END IF;
+   END LOOP;
+   
+   
+   
+   FOR CO IN (SELECT NVL(B.DATA_ANALISE,TRUNC(SYSDATE)) DATA_ANALISE,
+                     NVL(B.CD_EMPRESA,MET.CD_EMPRESA) CD_EMPRESA,
+                     B.CD_ESTADO,
+                     NVL(B.CD_LINHA,MET.CD_LINHA) CD_LINHA,
+                     NVL(B.DESC_LINHA,L.DS_LINHA) DESC_LINHA,
+                     NVL(B.SAFRA,MET.SAFRA) SAFRA,
+                     NVL(B.QTDE,0) QTDE ,
+                     NVL(MT.DT_INICIAL,MET.DT_INICIAL) DT_INICIAL_SAFRA,
+                     NVL(MT.DT_FINAL,MET.DT_FINAL) DT_FINAL_SAFRA,
+                     NVL(NVL(MT.META_QTDE,MET.META_QTDE),0) META_QTDE
+              FROM (       
+              SELECT A.DATA_ANALISE, 
+                     A.CD_EMPRESA,
+                     A.CD_LINHA,
+                     A.DESC_LINHA,
+                     A.CD_ESTADO,
+                     A.QTDE,
+                     PKG_BI_COMPRAS.FN_BUSCA_SAFRA(A.CD_LINHA,A.CD_EMPRESA,A.DATA_ANALISE) SAFRA
+              FROM (
+                    SELECT /*CASE WHEN TO_CHAR(V_DATA_EMISSAO,'D')='2' THEN 
+                              CASE WHEN TO_CHAR(NFIS.DT_SAIDAENTRADA,'D') IN ('6','7','1') THEN TRUNC(NEXT_DAY(NFIS.DT_SAIDAENTRADA-4,'FRIDAY'))
+                                 ELSE NFIS.DT_SAIDAENTRADA END 
+                           ELSE 
+                             NFIS.DT_SAIDAENTRADA
+                           END */
+                           NFIS.DT_SAIDAENTRADA DATA_ANALISE,
+                           NFIS.CD_EMPRESA,
+                           NFIT.CD_LINHA,
+                           C.CD_ESTADO,
+                           MAX(LIN.DS_LINHA) DESC_LINHA,
+                           SUM(NFIT.QT_FATURADA)  QTDE
+                      FROM HDS.NFPRINCIPAL NFIS
+                          INNER JOIN HDS.NFITEM NFIT
+                             ON  NFIS.CD_EMPRESA = NFIT.CD_EMPRESA
+                             AND NFIS.CD_ESTABELECIMENTO = NFIT.CD_ESTABELECIMENTO
+                             AND NFIS.NR_NOTAFISCAL = NFIT.NR_NOTAFISCAL
+                             AND NFIS.CD_SERIENF = NFIT.CD_SERIENF
+                             AND NFIS.CD_CLIFOR = NFIT.CD_CLIFOR
+                             AND NFIS.CD_DOCUMENTO = NFIT.CD_DOCUMENTO
+                             AND NFIS.TP_TIPO_NOTA = NFIT.TP_TIPO_NOTA
+                      INNER JOIN HDS.CLIFOR C ON C.CD_CLIFOR = NFIS.CD_CLIFOR 
+                      INNER JOIN HDS.LINHA LIN ON LIN.CD_EMPRESA = NFIT.CD_EMPRESA AND LIN.CD_LINHA = NFIT.CD_LINHA
+                    WHERE  NFIS.TP_TIPO_NOTA = 'E'
+                       AND NFIS.FG_CANCELAMENTO = 'N'
+                       AND NFIS.TP_CONSUMO = 'I'
+                       AND NFIS.FG_INTEGRA_ESTQ='S'
+                       AND TRIM(NFIT.CD_PRODUTO_MATER)<>'0'
+                       AND (NFIT.CD_LINHA BETWEEN 71 AND 80 OR NFIT.CD_LINHA = 23)
+                       AND (CAST(TRIM(NFIS.CD_GRAU_PRECO) AS NUMBER) <= 22 OR NVL(NFIT.CD_LINHA,' ')<>'71') /*REGRA DE GRAU SOMENTE PARA A UVA*/
+                       AND NFIS.CD_EMPRESA IN ('2','300','200')
+                       AND (NFIT.CD_LINHA BETWEEN 71 AND 80 OR NFIT.CD_LINHA = 23)
+                       AND NFIS.DT_SAIDAENTRADA BETWEEN 
+                                                  /*CASE WHEN TO_CHAR(V_DATA_EMISSAO,'D')='2'
+                                                     THEN (V_DATA_EMISSAO)-3 
+                                                   ELSE 
+                                                    TRUNC(V_DATA_EMISSAO)-1
+                                                   END */
+                                                   TRUNC(V_DATA_EMISSAO)-3
+                                                 AND TRUNC(V_DATA_EMISSAO)
+                     GROUP BY 
+                           /*CASE WHEN TO_CHAR(V_DATA_EMISSAO,'D')='2' THEN 
+                              CASE WHEN TO_CHAR(NFIS.DT_SAIDAENTRADA,'D') IN ('6','7','1') THEN TRUNC(NEXT_DAY(NFIS.DT_SAIDAENTRADA-4,'FRIDAY'))
+                                 ELSE NFIS.DT_SAIDAENTRADA END 
+                           ELSE 
+                             NFIS.DT_SAIDAENTRADA
+                           END*/
+                           NFIS.DT_SAIDAENTRADA,
+                           NFIS.CD_EMPRESA,
+                           NFIT.CD_LINHA,
+                           C.CD_ESTADO
+                    ORDER BY 1,3
+                 ) A
+              ) B LEFT JOIN META_COMPRAS MT ON MT.CD_LINHA = B.CD_LINHA AND MT.CD_EMPRESA = B.CD_EMPRESA AND MT.SAFRA = B.SAFRA
+                  FULL JOIN gtt_safra_vigente MET ON MET.CD_LINHA = B.CD_LINHA AND MET.CD_EMPRESA = B.CD_EMPRESA AND MET.SAFRA = B.SAFRA
+                  LEFT JOIN HDS.LINHA L ON L.CD_LINHA = MET.CD_LINHA AND L.CD_EMPRESA = MET.CD_EMPRESA
+
+      ) 
+    LOOP
+      -- INSERE OS DADOS DO REGISTRO DO DIA E DIA ANTERIOR 
+      IF CO.CD_ESTADO IS NOT NULL THEN
+         INSERT INTO GTT_ANALISE_REC_FRUTAS2 (DATA_ANALISE, CD_EMPRESA, UF, CD_LINHA, DESC_LINHA, SAFRA, QTDE, QTDE_ACUMULADO,QTDE_META)
+            VALUES (CO.DATA_ANALISE,CO.CD_EMPRESA,CO.CD_ESTADO,CO.CD_LINHA,CO.DESC_LINHA,CO.SAFRA,CO.QTDE,0,CO.META_QTDE);
+      END IF;
+       -- INSERE O ACUMULADO AGORA, POR UF
+       INSERT INTO GTT_ANALISE_REC_FRUTAS2 (DATA_ANALISE, CD_EMPRESA, UF, CD_LINHA, DESC_LINHA, SAFRA, QTDE, QTDE_ACUMULADO,QTDE_META)           
+           SELECT TRUNC(V_DATA_EMISSAO),
+                  NFIS.CD_EMPRESA,
+                  C.CD_ESTADO,
+                  NFIT.CD_LINHA,
+                  CO.DESC_LINHA,
+                  MAX(CO.SAFRA),
+                  0,
+                  SUM(NFIT.QT_FATURADA),
+                  MAX(CO.META_QTDE)
+            FROM HDS.NFPRINCIPAL NFIS
+                          INNER JOIN HDS.NFITEM NFIT
+                             ON  NFIS.CD_EMPRESA = NFIT.CD_EMPRESA
+                             AND NFIS.CD_ESTABELECIMENTO = NFIT.CD_ESTABELECIMENTO
+                             AND NFIS.NR_NOTAFISCAL = NFIT.NR_NOTAFISCAL
+                             AND NFIS.CD_SERIENF = NFIT.CD_SERIENF
+                             AND NFIS.CD_CLIFOR = NFIT.CD_CLIFOR
+                             AND NFIS.CD_DOCUMENTO = NFIT.CD_DOCUMENTO
+                             AND NFIS.TP_TIPO_NOTA = NFIT.TP_TIPO_NOTA
+                      INNER JOIN HDS.CLIFOR C ON C.CD_CLIFOR = NFIS.CD_CLIFOR 
+                    WHERE  NFIS.TP_TIPO_NOTA = 'E'
+                       AND NFIS.FG_CANCELAMENTO = 'N'
+                       AND NFIS.TP_CONSUMO = 'I'
+                       AND NFIS.FG_INTEGRA_ESTQ='S'
+                       AND TRIM(NFIT.CD_PRODUTO_MATER)<>'0'
+                       AND (NFIT.CD_LINHA BETWEEN 71 AND 80 OR NFIT.CD_LINHA = 23)
+                       AND NFIS.CD_EMPRESA IN ('2','300','200')
+                       AND (CAST(TRIM(NFIS.CD_GRAU_PRECO) AS NUMBER) <= 22 OR NVL(NFIT.CD_LINHA,' ')<>'71') /*REGRA DE GRAU SOMENTE PARA A UVA*/
+                       AND NFIS.DT_SAIDAENTRADA BETWEEN CO.DT_INICIAL_SAFRA AND CASE WHEN CO.DT_FINAL_SAFRA > V_DATA_EMISSAO THEN V_DATA_EMISSAO ELSE CO.DT_FINAL_SAFRA END 
+                       AND NFIS.CD_EMPRESA = CO.CD_EMPRESA
+                       AND NFIT.CD_LINHA = CO.CD_LINHA
+                 GROUP BY TRUNC(SYSDATE),
+                          NFIS.CD_EMPRESA,
+                          C.CD_ESTADO,
+                          NFIT.CD_LINHA,
+                          CO.DESC_LINHA;
+    END LOOP;
+    
+  /*    -- FAZ UMA CARGA NA GTT PARA TER TODAS AS LINHAS COM SAFRAS VIGENTES DISPONIVEIS NO PAINEL
+    INSERT INTO GTT_ANALISE_REC_FRUTAS2 (DATA_ANALISE,UF, CD_EMPRESA,CD_LINHA,DESC_LINHA,SAFRA,QTDE_META)
+     SELECT TRUNC(V_DATA_EMISSAO),' ',V.CD_EMPRESA,V.CD_LINHA,L.DS_LINHA,V.SAFRA,V.META_QTDE 
+      FROM GTT_SAFRA_VIGENTE V 
+         INNER JOIN HDS.LINHA L ON L.CD_LINHA = V.CD_LINHA AND L.CD_EMPRESA = V.CD_EMPRESA
+     WHERE NOT EXISTS (SELECT 1 FROM GTT_ANALISE_REC_FRUTAS2 RC WHERE RC.CD_EMPRESA = V.CD_EMPRESA AND RC.CD_LINHA = V.CD_LINHA);
+ */
+    
+      
+    OPEN R_RESULTADO FOR 
+       WITH TMP AS
+        ( SELECT A.CD_EMPRESA,
+                 A.CD_LINHA LINHA,
+                 A.DESC_LINHA,
+                 A.UF,
+                 /*A.DIA_ANTERIOR,
+                 A.DIA_ATUAL,*/
+                 A.QTDE_D3,
+                 A.QTDE_D2,
+                 A.QTDE_D1,
+                 A.QTDE_D0,
+                 A.ACUMULADO,
+                 NVL((SELECT 'S' FROM META_COMPRAS M WHERE M.CD_LINHA = A.CD_LINHA 
+                                                  AND M.CD_EMPRESA = A.CD_EMPRESA
+                                                  AND TRUNC(SYSDATE) BETWEEN M.DT_INICIAL AND M.DT_FINAL
+                                                  AND ROWNUM = 1),'N') EM_SAFRA,
+                 A.SAFRA,
+                 CASE A.CD_LINHA WHEN 71 THEN 'AA'
+                       WHEN 72 THEN 'BB'
+                       WHEN 74 THEN 'CC'
+                       WHEN 73 THEN 'DD'
+                       WHEN 23 THEN 'EE'
+                       WHEN 79 THEN 'FF'
+                       WHEN 78 THEN 'GG'
+                     ELSE 'ZZ'
+                  END||'_'||CAST(A.CD_LINHA AS VARCHAR2(10)) CD_LINHA
+                 
+          FROM ( SELECT CAST(A.CD_EMPRESA AS VARCHAR2(20)) CD_EMPRESA,
+                      A.CD_LINHA,
+                      MAX(regexp_replace(A.DESC_LINHA,'[[:punct:]]|RESUMO|FRUTA','')) DESC_LINHA,
+                      A.UF,
+                     /* SUM(CASE WHEN A.DATA_ANALISE <> V_DATA_EMISSAO THEN
+                             A.QTDE
+                           ELSE 0
+                          END) DIA_ANTERIOR,
+                      SUM(CASE WHEN A.DATA_ANALISE = V_DATA_EMISSAO THEN
+                             A.QTDE
+                           ELSE 0
+                          END) DIA_ATUAL,*/
+                      SUM(CASE WHEN A.DATA_ANALISE = V_DATA_EMISSAO-3 THEN A.QTDE ELSE 0 END) QTDE_D3,
+                      SUM(CASE WHEN A.DATA_ANALISE = V_DATA_EMISSAO-2 THEN A.QTDE ELSE 0 END) QTDE_D2,
+                      SUM(CASE WHEN A.DATA_ANALISE = V_DATA_EMISSAO-1 THEN A.QTDE ELSE 0 END) QTDE_D1,
+                      SUM(CASE WHEN A.DATA_ANALISE = V_DATA_EMISSAO   THEN A.QTDE ELSE 0 END) QTDE_D0,
+                      MAX(A.QTDE_ACUMULADO) ACUMULADO,
+                      MAX(A.QTDE_META) QTDE_META,
+                      MAX(A.SAFRA) SAFRA
+                FROM GTT_ANALISE_REC_FRUTAS2 A
+                GROUP BY CAST(A.CD_EMPRESA AS VARCHAR2(20)), A.CD_LINHA, A.UF
+              ) A
+             /*WHERE A.DIA_ANTERIOR<>0 OR A.DIA_ATUAL<>0 OR A.ACUMULADO<>0*/
+          )
+        SELECT B.EMPRESA,
+               B.LINHA CD_LINHA,
+               B.DESCRICAO,
+               B.UF,
+               CASE WHEN B.EMPRESA IS NULL OR B.LINHA IS NULL  THEN NULL ELSE B.SAFRA END SAFRA,
+               /*B.DIA_ANTERIOR,
+                 B.DIA_ATUAL,*/
+               B.QTDE_D3,
+               B.QTDE_D2,
+               B.QTDE_D1,
+               B.QTDE_D0,
+               B.ACUMULADO,
+               B.META,
+               CASE WHEN B.META = 0 THEN 0 ELSE 
+                  ROUND(B.ACUMULADO/B.META*100,2) END "% ATINGIDO"
+           FROM (SELECT A.CD_EMPRESA||CASE WHEN A.CD_EMPRESA IS NULL THEN NULL ELSE 
+                                          MAX(' - '||SUBSTR(EMP.NM_FANTASIA,1,INSTR(EMP.NM_FANTASIA,' '))) END  EMPRESA,
+                        A.CD_LINHA,
+                        CASE WHEN A.CD_EMPRESA IS NULL THEN 'TOTAL GERAL'
+                             WHEN A.CD_LINHA IS NULL THEN 'TOTAL EMPRESA'
+                             WHEN A.UF IS NULL THEN 'TOTAL LINHA'
+                           ELSE
+                        MAX(A.DESC_LINHA) END DESCRICAO,
+                        A.UF,
+                        SUM(A.QTDE_D3) QTDE_D3,
+                        SUM(A.QTDE_D2) QTDE_D2,
+                        SUM(A.QTDE_D1) QTDE_D1,
+                        SUM(A.QTDE_D0) QTDE_D0,
+                        SUM(A.ACUMULADO) ACUMULADO,
+                        FN_BUSCA_META (CAST(PKG_UTIL.FN_STRTOKEN(A.CD_LINHA,'_',2) AS NUMBER),A.CD_EMPRESA,A.UF) META,
+                        ROW_NUMBER() OVER(ORDER BY NULL) ID_REGISTRO,
+                        MAX(A.SAFRA) SAFRA,
+                        MAX(A.LINHA) LINHA
+                   FROM TMP A
+                     INNER JOIN HDS.EMPRESA EMP ON EMP.CD_EMPRESA = A.CD_EMPRESA
+                   GROUP BY ROLLUP( A.CD_EMPRESA,
+                                    A.CD_LINHA,
+                                    A.UF)
+                 ) B ORDER BY B.ID_REGISTRO;
+ 
+ END SP_RECEBIMENTO_FRUTAS;
+ PROCEDURE SP_RECEBIMENTO_FRUTAS_DET (P_DATA_EMISSAO IN DATE,
+                                      P_EMPRESA IN VARCHAR2,
+                                      P_LINHA IN NUMBER,
+                                      P_UF IN VARCHAR2,
+                                      P_COLUNA_CLICADA VARCHAR2/*QTDE_D3,QTDE_D2,QTDE_D1,QTDE_D0,ACUMULADO*/,
+                                      R_RESULTADO OUT SYS_REFCURSOR
+                                      )
+ IS 
+   V_SQL LONG;
+   V_SQL_WHERE LONG DEFAULT ' ';
+   V_DATA_INICIAL_FILTRO DATE;
+   V_DATA_FINAL_FILTRO DATE;
+   V_SQL_COLUNA_GRAU_MEDIO LONG;
+   
+ BEGIN 
+   EXECUTE IMMEDIATE 'ALTER SESSION SET NLS_LANGUAGE ="AMERICAN"';
+   EXECUTE IMMEDIATE 'ALTER SESSION SET NLS_DATE_FORMAT ="DD/MM/YYYY"';
+   insert into log_parametros_proc (nome_parametro, valor_enviado)
+     values ('P_DATA_EMISSAO',to_char(P_DATA_EMISSAO,'DD/MM/YYYY'));
+   insert into log_parametros_proc (nome_parametro, valor_enviado)
+     values ('P_COLUNA_CLICADA',P_COLUNA_CLICADA);
+     
+  
+   IF P_COLUNA_CLICADA='QTDE_D3' THEN 
+     /*IF TO_CHAR(P_DATA_EMISSAO,'D')='2' THEN 
+         V_SQL_WHERE:=' NFIS.DT_SAIDAENTRADA BETWEEN '||CHR(39)||TO_CHAR(P_DATA_EMISSAO-3,'DD/MM/YYYY')||CHR(39) ||' AND '||CHR(39)||TO_CHAR(P_DATA_EMISSAO-1,'DD/MM/YYYY')||CHR(39);
+     ELSE  
+         V_SQL_WHERE:=' NFIS.DT_SAIDAENTRADA ='||CHR(39)||TO_CHAR(P_DATA_EMISSAO-1,'DD/MM/YYYY') ||CHR(39);
+     END IF;*/
+      V_SQL_WHERE:=' NFIS.DT_SAIDAENTRADA ='||CHR(39)||TO_CHAR(P_DATA_EMISSAO-3,'DD/MM/YYYY') ||CHR(39);
+   ELSIF   P_COLUNA_CLICADA='QTDE_D2'    THEN 
+          V_SQL_WHERE:=' NFIS.DT_SAIDAENTRADA ='||CHR(39)||TO_CHAR(P_DATA_EMISSAO-2,'DD/MM/YYYY') ||CHR(39);
+   ELSIF   P_COLUNA_CLICADA='QTDE_D1'    THEN 
+          V_SQL_WHERE:=' NFIS.DT_SAIDAENTRADA ='||CHR(39)||TO_CHAR(P_DATA_EMISSAO-1,'DD/MM/YYYY') ||CHR(39);          
+   ELSIF P_COLUNA_CLICADA='QTDE_D0' THEN 
+     V_SQL_WHERE:=' NFIS.DT_SAIDAENTRADA ='||CHR(39)||TO_CHAR(P_DATA_EMISSAO,'DD/MM/YYYY') ||CHR(39);
+   ELSIF P_COLUNA_CLICADA='ACUMULADO' THEN 
+      V_SQL_WHERE:='  EXISTS (SELECT 1 FROM META_COMPRAS MT WHERE MT.CD_LINHA = NFIT.CD_LINHA AND ';
+      V_SQL_WHERE:=V_SQL_WHERE||'                                MT.CD_EMPRESA = NFIS.CD_EMPRESA AND ';
+      V_SQL_WHERE:=V_SQL_WHERE||'                                MT.SAFRA = PKG_BI_COMPRAS.FN_BUSCA_SAFRA(NFIT.CD_LINHA,NFIS.CD_EMPRESA,'||CHR(39)||TO_CHAR(P_DATA_EMISSAO,'DD/MM/YYYY')||CHR(39)||')';
+      V_SQL_WHERE:=V_SQL_WHERE||' AND  NFIS.DT_SAIDAENTRADA BETWEEN MT.DT_INICIAL AND MT.DT_FINAL )';
+   END IF;
+   
+   IF P_LINHA IS NOT NULL THEN 
+     V_SQL_WHERE :=V_SQL_WHERE ||' AND NFIT.CD_LINHA = '||CAST(P_LINHA AS VARCHAR2);
+   END IF;
+   IF P_UF IS NOT NULL THEN 
+     V_SQL_WHERE :=V_SQL_WHERE ||' AND C.CD_ESTADO = '||CHR(39)||P_UF||CHR(39);
+   END IF;
+   IF P_EMPRESA IS NOT NULL THEN 
+     V_SQL_WHERE :=V_SQL_WHERE ||' AND NFIS.CD_EMPRESA = '||SUBSTR(P_EMPRESA,1,INSTR(P_EMPRESA,'-')-1);
+   END IF;
+
+ 
+   EXECUTE IMMEDIATE 'TRUNCATE TABLE GTT_COMPRA_DETALHE_PRODUTO';
+   V_SQL:=' INSERT INTO GTT_COMPRA_DETALHE_PRODUTO';
+   V_SQL:=V_SQL||' SELECT NFIT.CD_PRODUTO_MATER PRODUTO,';
+   V_SQL:=V_SQL||'        MAX(REGEXP_REPLACE(PROD.DS_PRODMAT_RESUMIDA,''[[:punct:]]|RESUMO|FRUTA'',''''))  DESCRICAO,';
+   V_SQL:=V_SQL||'        TRIM(NFIS.CD_GRAU_PRECO) GRAU,';
+   V_SQL:=V_SQL||'        SUM(NFIT.QT_FATURADA) QTDE_TOTAL';
+   V_SQL:=V_SQL||'   FROM HDS.NFPRINCIPAL NFIS';
+   V_SQL:=V_SQL||'  INNER JOIN HDS.NFITEM NFIT';
+   V_SQL:=V_SQL||'     ON NFIS.CD_EMPRESA = NFIT.CD_EMPRESA';
+   V_SQL:=V_SQL||'    AND NFIS.CD_ESTABELECIMENTO = NFIT.CD_ESTABELECIMENTO';
+   V_SQL:=V_SQL||'    AND NFIS.NR_NOTAFISCAL = NFIT.NR_NOTAFISCAL';
+   V_SQL:=V_SQL||'    AND NFIS.CD_SERIENF = NFIT.CD_SERIENF';
+   V_SQL:=V_SQL||'    AND NFIS.CD_CLIFOR = NFIT.CD_CLIFOR';
+   V_SQL:=V_SQL||'    AND NFIS.CD_DOCUMENTO = NFIT.CD_DOCUMENTO';
+   V_SQL:=V_SQL||'     AND NFIS.TP_TIPO_NOTA = NFIT.TP_TIPO_NOTA';
+   V_SQL:=V_SQL||'  INNER JOIN HDS.CLIFOR C';
+   V_SQL:=V_SQL||'     ON C.CD_CLIFOR = NFIS.CD_CLIFOR';
+   V_SQL:=V_SQL||'  INNER JOIN HDS.LINHA LIN';
+   V_SQL:=V_SQL||'     ON LIN.CD_EMPRESA = NFIT.CD_EMPRESA';
+   V_SQL:=V_SQL||'    AND LIN.CD_LINHA = NFIT.CD_LINHA';
+   V_SQL:=V_SQL||'  INNER JOIN HDS.PRODMAT PROD ON PROD.CD_EMPRESA = NFIS.CD_EMPRESA ';
+   V_SQL:=V_SQL||'                             AND PROD.CD_PRODUTO_MATER = NFIT.CD_PRODUTO_MATER';
+   V_SQL:=V_SQL||'     WHERE NFIS.TP_TIPO_NOTA = ''E''  ';
+   V_SQL:=V_SQL||'    AND NFIS.FG_CANCELAMENTO =''N''  ';
+   V_SQL:=V_SQL||'    AND NFIS.TP_CONSUMO = ''I''  ';
+   V_SQL:=V_SQL||'   AND TRIM(NFIT.CD_PRODUTO_MATER)<>''0''';
+   V_SQL:=V_SQL||'    AND NFIS.FG_INTEGRA_ESTQ = ''S''  ';/*
+   IF P_LINHA = 71 THEN \*SOMENTE PARA AS UVAS*\
+      V_SQL:=V_SQL||'    AND CAST(TRIM(NFIS.CD_GRAU_PRECO) AS NUMBER) <= 20' ;   
+   END IF;*/
+   V_SQL:=V_SQL||'    AND (NFIT.CD_LINHA BETWEEN 71 AND 80 OR NFIT.CD_LINHA = 23)';
+   V_SQL:=V_SQL||'    AND NFIS.CD_EMPRESA IN (''2'', ''300'',''200'')';
+   V_SQL:=V_SQL||'    AND NFIT.QT_FATURADA IS NOT NULL';
+   V_SQL:=V_SQL||'    AND NFIS.CD_GRAU_PRECO IS NOT NULL';
+   V_SQL:=V_SQL||' AND '||V_SQL_WHERE;
+   V_SQL:=V_SQL||'   GROUP BY  NFIT.CD_PRODUTO_MATER,NFIS.CD_GRAU_PRECO ';
+   DBMS_OUTPUT.PUT_LINE(V_SQL);
+   EXECUTE IMMEDIATE V_SQL;
+   
+   V_SQL:=' ';
+   V_SQL_COLUNA_GRAU_MEDIO:=' ';
+   IF P_LINHA = 71 OR P_LINHA IS NULL THEN 
+     FOR GR IN (SELECT  TRIM(G.GRAU) GRAU,CAST(G.GRAU AS NUMBER) GRAU_NUM FROM GTT_COMPRA_DETALHE_PRODUTO G WHERE TRIM(G.GRAU) IS NOT NULL GROUP BY  TRIM(G.GRAU),CAST(G.GRAU AS NUMBER) ORDER BY GRAU_NUM )
+     LOOP
+       IF V_SQL<>' ' THEN 
+         V_SQL:=V_SQL||',';
+       END IF;
+       V_SQL:=V_SQL||'SUM(DECODE (TRIM(GR.GRAU),'||CHR(39)||GR.GRAU||CHR(39)||',GR.QTDE_TOTAL,0)) GRAU_'||GR.GRAU;
+     END LOOP;
+   END IF;
+     V_SQL:=V_SQL||CASE WHEN V_SQL<>' ' THEN ',' END ||' SUM(GR.QTDE_TOTAL) QTDE_TOTAL';
+     IF P_LINHA = 71 THEN 
+        V_SQL:=V_SQL||CASE WHEN V_SQL<>' ' THEN ',' END ||' ROUND(SUM(GR.QTDE_TOTAL*CAST(TRIM(GR.GRAU) AS NUMBER))/SUM(GR.QTDE_TOTAL),2) GRAU_MEDIO';
+     END IF;
+  
+   --DBMS_OUTPUT.PUT_LINE (V_SQL);
+   V_SQL:='SELECT CASE WHEN TRIM(GR.PRODUTO) IS NULL THEN ''TOTAL GERAL '' ELSE TRIM(GR.PRODUTO)||'' - ''||MAX(GR.DESCRICAO) END  VARIEDADE,'||V_SQL;
+   V_SQL:=V_SQL||' FROM GTT_COMPRA_DETALHE_PRODUTO GR GROUP BY ROLLUP(TRIM(GR.PRODUTO))';
+   V_SQL:=V_SQL||'ORDER BY CASE WHEN TRIM(GR.PRODUTO) IS NULL THEN NULL ELSE  MAX(CAST(GR.PRODUTO AS NUMBER)) END NULLS LAST';
+   
+   --DBMS_OUTPUT.PUT_LINE (V_SQL);
+   OPEN R_RESULTADO FOR V_SQL;
+                  
+                  
+                  
+ END  SP_RECEBIMENTO_FRUTAS_DET;                                
+ PROCEDURE SP_RECEBIMENTO_FRUTAS_DET_NF (P_DATA_EMISSAO IN DATE,
+                                        P_EMPRESA IN VARCHAR2,
+                                        P_LINHA IN NUMBER,
+                                        P_UF IN VARCHAR2,
+                                        P_COLUNA_CLICADA VARCHAR2/*QTDE_D3,QTDE_D2,QTDE_D1,QTDE_D0,ACUMULADO*/,
+                                        P_COLUNA_GRAU_CLICADA VARCHAR2,
+                                        P_CD_VARIEDADE NUMBER,
+                                        R_RESULTADO OUT SYS_REFCURSOR
+                                        )
+ IS 
+   V_SQL LONG;
+   V_SQL_WHERE LONG DEFAULT ' ';
+   V_DATA_INICIAL_FILTRO DATE;
+   V_DATA_FINAL_FILTRO DATE;
+   V_CD_EMPRESA NUMBER;
+   V_GRAU CHAR(8);
+   
+ BEGIN 
+   EXECUTE IMMEDIATE 'ALTER SESSION SET NLS_LANGUAGE ="AMERICAN"';
+   EXECUTE IMMEDIATE 'ALTER SESSION SET NLS_DATE_FORMAT ="DD/MM/YYYY"';
+   EXECUTE IMMEDIATE 'TRUNCATE TABLE GTT_DETALHAMENTO_NF';
+   IF P_EMPRESA IS NOT NULL THEN 
+     V_CD_EMPRESA:=SUBSTR(P_EMPRESA,1,INSTR(P_EMPRESA,'-')-1);
+    
+   END IF;
+   
+   IF P_COLUNA_CLICADA='QTDE_D3' THEN 
+    /* IF TO_CHAR(P_DATA_EMISSAO,'D')='2' THEN 
+         V_DATA_INICIAL_FILTRO:=P_DATA_EMISSAO-3;
+         V_DATA_FINAL_FILTRO:=P_DATA_EMISSAO-1;
+     ELSE 
+        V_DATA_INICIAL_FILTRO:=P_DATA_EMISSAO-1;
+        V_DATA_FINAL_FILTRO:=P_DATA_EMISSAO-1;
+     END IF;*/  
+     V_DATA_INICIAL_FILTRO:=P_DATA_EMISSAO-3;
+     V_DATA_FINAL_FILTRO:=P_DATA_EMISSAO-3;
+   ELSIF  P_COLUNA_CLICADA='QTDE_D2' THEN 
+    V_DATA_INICIAL_FILTRO:=P_DATA_EMISSAO-2;
+     V_DATA_FINAL_FILTRO:=P_DATA_EMISSAO-2;
+  ELSIF  P_COLUNA_CLICADA='QTDE_D1' THEN 
+    V_DATA_INICIAL_FILTRO:=P_DATA_EMISSAO-1;
+    V_DATA_FINAL_FILTRO:=P_DATA_EMISSAO-1;
+   ELSIF P_COLUNA_CLICADA='QTDE_D0' THEN 
+       V_DATA_INICIAL_FILTRO:=P_DATA_EMISSAO;
+       V_DATA_FINAL_FILTRO:=P_DATA_EMISSAO;
+   ELSIF P_COLUNA_CLICADA='ACUMULADO' THEN 
+      V_DATA_INICIAL_FILTRO:=ADD_MONTHS(P_DATA_EMISSAO,-14);
+      V_DATA_FINAL_FILTRO:=P_DATA_EMISSAO;
+   END IF;
+   IF INSTR(P_COLUNA_GRAU_CLICADA ,'GRAU')>0 THEN 
+      V_GRAU:=TRIM(REGEXP_REPLACE(P_COLUNA_GRAU_CLICADA,'[[:punct:]|[:alpha:]]',''));
+   END IF;
+   
+   INSERT INTO GTT_DETALHAMENTO_NF (CD_PRODUTO_MATER, DS_PRODUTO_MATER, CD_EMPRESA, CD_SERIENF, NR_NOTAFISCAL, NR_ITEM_NOTAFISCAL, FORNECEDOR, DT_EMISSAO, DT_ENTRADA, NM_CLIFOR, DS_PLACA_VEICULO, DS_MUNICIPIO, NF_FORNECEDOR, VL_UNITARIO, QT_FATURADA, GRAU, VL_TOTAL_FATURADO, FAT_NF)
+      SELECT NFIT.CD_PRODUTO_MATER,
+             PR.DS_PRODUTO_MATER,
+             NFIT.CD_EMPRESA,
+             NFIT.CD_SERIENF,
+             NFIT.NR_NOTAFISCAL,
+             NFIT.NR_ITEM_NOTAFISCAL,
+             NFIS.CD_CLIFOR            FORNECEDOR,
+             NFIS.DT_EMISSAO,
+             NFIS.DT_SAIDAENTRADA      DT_ENTRADA,
+             C.NM_CLIFOR,
+             NFIS.DS_PLACA_VEICULO,
+             MUN.DS_MUNICIPIO,
+             NFIS.DS_OBSERVACAO_FISCAL NF_FORNECEDOR,
+             NFIT.VL_PRECO_UNITBRUTO   VL_UNITARIO,
+             NFIT.QT_FATURADA,
+             NFIS.CD_GRAU_PRECO        GRAU,
+             NFIT.VL_TOTAL_FATURADO,
+             NFIS.VL_TOTAL_FATURADO    FAT_NF
+        FROM HDS.NFPRINCIPAL NFIS
+       INNER JOIN HDS.NFITEM NFIT
+          ON NFIS.CD_EMPRESA = NFIT.CD_EMPRESA
+         AND NFIS.CD_ESTABELECIMENTO = NFIT.CD_ESTABELECIMENTO
+         AND NFIS.NR_NOTAFISCAL = NFIT.NR_NOTAFISCAL
+         AND NFIS.CD_SERIENF = NFIT.CD_SERIENF
+         AND NFIS.CD_CLIFOR = NFIT.CD_CLIFOR
+         AND NFIS.CD_DOCUMENTO = NFIT.CD_DOCUMENTO
+         AND NFIS.TP_TIPO_NOTA = NFIT.TP_TIPO_NOTA
+       INNER JOIN HDS.PRODMAT PR ON PR.CD_EMPRESA = NFIS.CD_EMPRESA 
+                                AND PR.CD_PRODUTO_MATER = NFIT.CD_PRODUTO_MATER
+       INNER JOIN HDS.CLIFOR C
+          ON C.CD_CLIFOR = NFIS.CD_CLIFOR
+       INNER JOIN HDS.LINHA LIN
+          ON LIN.CD_EMPRESA = NFIT.CD_EMPRESA
+         AND LIN.CD_LINHA = NFIT.CD_LINHA
+       INNER JOIN HDS.MUNICIPIO MUN
+          ON MUN.CD_MUNICIPIO = C.CD_MUNICIPIO
+       WHERE NFIS.TP_TIPO_NOTA = 'E'
+         AND NFIS.FG_CANCELAMENTO = 'N'
+         AND NFIS.TP_CONSUMO = 'I'
+         AND NFIS.FG_INTEGRA_ESTQ = 'S'
+         AND TRIM(NFIT.CD_PRODUTO_MATER) <> '0'
+         AND (NFIT.CD_LINHA BETWEEN 71 AND 80 OR NFIT.CD_LINHA = 23)
+         AND NFIS.CD_EMPRESA IN ('2','300','200')
+         AND (CAST(TRIM(REGEXP_REPLACE(TRIM(NFIS.CD_GRAU_PRECO),'[[:punct:]|[:alpha:]|[:space:]|[:cntrl:]]','')) AS NUMBER) <= 22 OR NVL(P_LINHA,0)<>'71') /*REGRA DE GRAU SOMENTE PARA A UVA*/
+         AND NFIS.DT_SAIDAENTRADA BETWEEN V_DATA_INICIAL_FILTRO AND V_DATA_FINAL_FILTRO
+         AND (NFIS.CD_EMPRESA = V_CD_EMPRESA OR V_CD_EMPRESA IS NULL)
+         AND (NFIT.CD_LINHA = P_LINHA OR P_LINHA IS NULL)
+         AND (C.CD_ESTADO = P_UF OR P_UF IS NULL)
+         AND (NFIT.CD_PRODUTO_MATER =P_CD_VARIEDADE OR P_CD_VARIEDADE IS NULL)
+         AND (NFIS.CD_GRAU_PRECO = CAST(V_GRAU  AS CHAR(8)) OR V_GRAU IS NULL)
+         AND (  EXISTS (SELECT 1 FROM META_COMPRAS MT 
+                          WHERE MT.CD_LINHA = NFIT.CD_LINHA 
+                            AND MT.CD_EMPRESA = NFIS.CD_EMPRESA 
+                            AND MT.SAFRA = PKG_BI_COMPRAS.FN_BUSCA_SAFRA(NFIT.CD_LINHA,NFIS.CD_EMPRESA,P_DATA_EMISSAO)
+                            AND NFIS.DT_SAIDAENTRADA BETWEEN MT.DT_INICIAL AND MT.DT_FINAL)
+                         OR P_COLUNA_CLICADA<>'ACUMULADO'
+         );
+   
+   OPEN R_RESULTADO FOR 
+   WITH TMP AS ( 
+       SELECT * FROM GTT_DETALHAMENTO_NF N
+       ORDER BY N.CD_PRODUTO_MATER,
+                N.DT_EMISSAO,
+                N.NR_NOTAFISCAL
+      )
+      SELECT CAST(A.CD_PRODUTO_MATER AS CHAR(5))||' - '||CAST(SUBSTR(A.DS_PRODUTO_MATER,1,30) AS CHAR(30))||' | QTDE FATURADA: '||TO_CHAR(ROUND(A.QTDE_FAT_TOTAL_ITEM,0),'999G999G999','NLS_NUMERIC_CHARACTERS = '',.''')||' | VALOR TOTAL: R$ '||TO_CHAR(VLR_FAT_TOTAL_ITEM,'999G999G999D00','NLS_NUMERIC_CHARACTERS = '',.''') VARIEDADE,
+             A.CD_EMPRESA EMPRESA,
+             A.CD_SERIENF,
+             A.NR_NOTAFISCAL,
+             A.DT_EMISSAO,
+             A.DT_ENTRADA,
+             CAST(A.FORNECEDOR AS VARCHAR2(20))||' - '||A.NM_CLIFOR FORNECEDOR,
+             A.DS_PLACA_VEICULO,
+             A.DS_MUNICIPIO,
+             A.NF_FORNECEDOR,
+             A.VL_UNITARIO,
+             A.QT_FATURADA,
+             A.GRAU,
+             A.VL_TOTAL_FATURADO,
+             A.FAT_NF
+       FROM ( SELECT SUM(A.QT_FATURADA ) OVER(PARTITION BY A.CD_PRODUTO_MATER ORDER BY A.CD_PRODUTO_MATER) QTDE_FAT_TOTAL_ITEM,
+                     SUM(A.VL_TOTAL_FATURADO) OVER(PARTITION BY A.CD_PRODUTO_MATER ORDER BY A.CD_PRODUTO_MATER) VLR_FAT_TOTAL_ITEM,
+                     A.CD_PRODUTO_MATER,
+                     A.DS_PRODUTO_MATER,
+                     A.CD_EMPRESA,
+                     A.CD_SERIENF,
+                     A.NR_NOTAFISCAL,
+                     A.FORNECEDOR,
+                     A.DT_EMISSAO,
+                     A.DT_ENTRADA,
+                     A.NM_CLIFOR,
+                     A.DS_PLACA_VEICULO,
+                     A.DS_MUNICIPIO,
+                     A.NF_FORNECEDOR,
+                     A.VL_UNITARIO,
+                     A.QT_FATURADA,
+                     A.GRAU,
+                     A.VL_TOTAL_FATURADO,
+                     A.FAT_NF,
+                     'D'
+              FROM TMP A
+             ) A 
+      ORDER BY 1,8 NULLS FIRST,9 NULLS FIRST;
+                  
+                  
+                  
+ END  SP_RECEBIMENTO_FRUTAS_DET_NF;
+ 
+END PKG_BI_COMPRAS;
